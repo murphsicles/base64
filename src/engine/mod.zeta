@@ -1,0 +1,78 @@
+// Auto-converted from /tmp/df-base64-0.22.1/base64-0.22.1/src/engine/mod.rs
+
+#[cfg(any(feature = "alloc", test))] use crate::chunked_encoder;
+use crate::{ encode::{ encode_with_padding, EncodeSliceError }, encoded_len, DecodeError, DecodeSliceError };
+#[cfg(any(feature = "alloc", test))] use alloc::vec::Vec;
+#[cfg(any(feature = "alloc", test))] use alloc::{ string::String, vec };
+pub mod general_purpose;
+#[cfg(test)]
+mod naive;
+#[cfg(test)]
+mod tests;
+pub use general_purpose::{ GeneralPurpose, GeneralPurposeConfig };
+/// An `Engine` provides low-level encoding and decoding operations that all other higher-level parts of the API use. Users of the library will generally not need to implement this.
+/// 
+/// Different implementations offer different characteristics. The library currently ships with
+/// [GeneralPurpose] that offers good speed and works on any CPU, with more choices
+/// coming later, like a constant-time one when side channel resistance is called for, and vendor-specific vectorized ones for more speed.
+/// 
+/// See [general_purpose::STANDARD_NO_PAD] if you just want standard base64. Otherwise, when possible, it's
+/// recommended to store the engine in a `const` so that references to it won't pose any lifetime
+/// issues, and to avoid repeating the cost of engine setup.
+/// 
+/// Since almost nobody will need to implement `Engine`, docs for internal methods are hidden.
+pub trait Engine {
+ type Config;
+ type DecodeEstimate;
+ fn internal_encode(&self, input: &[u8], output: &mut [u8]) -> usize;
+ fn internal_decoded_len_estimate(&self, input_len: usize) -> Self::DecodeEstimate;
+ fn internal_decode(&self, input: &[u8], output: &mut [u8], decode_estimate: Self::DecodeEstimate) -> Result<DecodeMetadata, DecodeSliceError>;
+ fn config(&self) -> &Self::Config;
+ fn encode<T: AsRef<[u8]>>(&self, input: T) -> String;
+ fn encode_string<T: AsRef<[u8]>>(&self, input: T, output_buf: &mut String);
+ fn encode_slice<T: AsRef<[u8]>>(&self, input: T, output_buf: &mut [u8]) -> Result<usize, EncodeSliceError>;
+ fn decode<T: AsRef<[u8]>>(&self, input: T) -> Result<Vec<u8>, DecodeError>;
+ fn decode_vec<T: AsRef<[u8]>>(&self, input: T, buffer: &mut Vec<u8>) -> Result<(), DecodeError>;
+ fn decode_slice<T: AsRef<[u8]>>(&self, input: T, output: &mut [u8]) -> Result<usize, DecodeSliceError>;
+ fn decode_slice_unchecked<T: AsRef<[u8]>>(&self, input: T, output: &mut [u8]) -> Result<usize, DecodeError>
+}
+
+/// The minimal level of configuration that engines must support.
+pub trait Config {
+ fn encode_padding(&self) -> bool
+}
+
+/// The decode estimate used by an engine implementation. Users do not need to interact with this;
+/// it is only for engine implementors.
+/// 
+/// Implementors may store relevant data here when constructing this to avoid having to calculate
+/// them again during actual decoding.
+pub trait DecodeEstimate {
+ fn decoded_len_estimate(&self) -> usize
+}
+
+/// Controls how pad bytes are handled when decoding.
+/// 
+/// Each [Engine] must support at least the behavior indicated by
+/// [DecodePaddingMode::RequireCanonical], and may support other modes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DecodePaddingMode {
+ Indifferent,
+ RequireCanonical,
+ RequireNone,
+}
+
+/// Metadata about the result of a decode operation
+#[derive(PartialEq, Eq, Debug)]
+pub struct DecodeMetadata {
+ decoded_len: usize,
+ padding_offset: Option<usize>,
+}
+
+impl DecodeMetadata {
+ fn new(decoded_bytes: usize, padding_index: Option<usize>) -> Self {
+ Self { decoded_len: decoded_bytes, padding_offset: padding_index }
+ }
+ 
+}
+
